@@ -1,8 +1,9 @@
 <?php
 $pdo = DB::conn();
 $company = get_company();
-$stmt = $pdo->prepare('SELECT * FROM workers WHERE company_id=? ORDER BY name');
-$stmt->execute([$company['id']]);
+// Get all workers from existing table structure
+$stmt = $pdo->prepare('SELECT * FROM workers ORDER BY name');
+$stmt->execute();
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <section class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -25,13 +26,19 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <thead>
           <tr class="text-left text-gray-600">
             <th class="py-2">Name</th>
+            <th class="py-2">Daily Salary</th>
+            <th class="py-2">Days Worked</th>
+            <th class="py-2">Total Salary</th>
             <th class="py-2 w-20">Actions</th>
           </tr>
         </thead>
         <tbody>
           <?php foreach ($rows as $r): ?>
             <tr class="border-t">
-              <td class="py-2"><?php echo e($r['name']); ?></td>
+              <td class="py-2 font-medium"><?php echo e($r['name']); ?></td>
+              <td class="py-2"><?php echo $r['per_day_salary'] ? number_format($r['per_day_salary'], 2) : '-'; ?></td>
+              <td class="py-2"><?php echo $r['days_worked'] ?? '-'; ?></td>
+              <td class="py-2"><?php echo $r['total_salary'] ? number_format($r['total_salary'], 2) : '-'; ?></td>
               <td class="py-2">
                 <form method="post" onsubmit="return confirm('Delete this worker? This will also remove their work logs.');">
                   <input type="hidden" name="action" value="worker_delete">
@@ -41,6 +48,11 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
               </td>
             </tr>
           <?php endforeach; ?>
+          <?php if (empty($rows)): ?>
+            <tr>
+              <td colspan="5" class="py-4 text-center text-gray-500">No workers found</td>
+            </tr>
+          <?php endif; ?>
         </tbody>
       </table>
     </div>

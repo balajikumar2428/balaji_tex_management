@@ -1,41 +1,63 @@
 <?php
 $pdo = DB::conn();
 $company = get_company();
-$workers = $pdo->prepare('SELECT id, name FROM workers WHERE company_id=? ORDER BY name');
-$workers->execute([$company['id']]);
+// Get all workers from existing table structure
+$workers = $pdo->prepare('SELECT id, name FROM workers ORDER BY name');
+$workers->execute();
 $workers = $workers->fetchAll(PDO::FETCH_ASSOC);
 
-// Weekly view: pick week starting Monday (Mon-Sat)
+// Date filtering logic
+$filter_type = $_GET['filter_type'] ?? 'weekly'; // 'weekly' or 'custom'
 $week_start = $_GET['week_start'] ?? '';
-if (!$week_start) {
-  $today = new DateTime();
-  $dow = (int)$today->format('N'); // 1=Mon..7=Sun
-  $today->modify('-' . ($dow - 1) . ' days');
-  $week_start = $today->format('Y-m-d');
+$from_date = $_GET['from_date'] ?? '';
+$to_date = $_GET['to_date'] ?? '';
+
+if ($filter_type === 'custom' && $from_date && $to_date) {
+  $start_date = $from_date;
+  $end_date = $to_date;
+} else {
+  // Weekly view: pick week starting Monday (Mon-Sat)
+  if (!$week_start) {
+    $today = new DateTime();
+    $dow = (int)$today->format('N'); // 1=Mon..7=Sun
+    $today->modify('-' . ($dow - 1) . ' days');
+    $week_start = $today->format('Y-m-d');
+  }
+  $start_date = $week_start;
+  $end_date = (new DateTime($week_start))->modify('+5 days')->format('Y-m-d');
 }
-$start_date = $week_start;
-$end_date = (new DateTime($week_start))->modify('+5 days')->format('Y-m-d');
 
 // Fetch aggregated amounts and warps by date and worker
 $stmt = $pdo->prepare("SELECT work_date, worker_id, SUM(amount) AS amt, SUM(warps_count) AS warps, MAX(id) AS last_id
-                       FROM work_logs WHERE company_id=? AND work_date BETWEEN ? AND ?
+                       FROM work_logs WHERE work_date BETWEEN ? AND ?
                        GROUP BY work_date, worker_id");
-$stmt->execute([$company['id'], $start_date, $end_date]);
+$stmt->execute([$start_date, $end_date]);
 $agg = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch unsettled advances aggregated by date and worker in range (use remaining amount = amount - paid_amount)
 $stmt = $pdo->prepare("SELECT advance_date AS work_date, worker_id, SUM(amount - paid_amount) AS adv
-                       FROM advances WHERE company_id=? AND settled=0 AND advance_date BETWEEN ? AND ?
+                       FROM advances WHERE settled=0 AND advance_date BETWEEN ? AND ?
                        GROUP BY advance_date, worker_id");
-$stmt->execute([$company['id'], $start_date, $end_date]);
+$stmt->execute([$start_date, $end_date]);
 $advAgg = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Build date range list (Mon..Sat)
+// Build date range list
 $dates = [];
-$d = new DateTime($start_date);
-for ($i=0; $i<6; $i++) {
-  $dates[] = $d->format('Y-m-d');
-  $d->modify('+1 day');
+if ($filter_type === 'custom') {
+  // For custom date range, build all dates between from_date and to_date
+  $d = new DateTime($start_date);
+  $end = new DateTime($end_date);
+  while ($d <= $end) {
+    $dates[] = $d->format('Y-m-d');
+    $d->modify('+1 day');
+  }
+} else {
+  // Weekly view: Mon..Sat
+  $d = new DateTime($start_date);
+  for ($i=0; $i<6; $i++) {
+    $dates[] = $d->format('Y-m-d');
+    $d->modify('+1 day');
+  }
 }
 
 // Map worker_id -> name
@@ -94,16 +116,45 @@ foreach ($advAgg as $r) {
 
   <div class="bg-white p-4 rounded shadow">
     <div class="flex items-center justify-between mb-3">
-      <h2 class="font-semibold">Weekly View (Mon–Sat)</h2>
-      <form method="get" class="flex items-center gap-2 text-sm">
-        <input type="hidden" name="page" value="work_logs">
-        <?php $prev=(new DateTime($start_date))->modify('-7 days')->format('Y-m-d'); $next=(new DateTime($start_date))->modify('+7 days')->format('Y-m-d'); ?>
-        <a class="px-3 py-1 border rounded" href="index.php?page=work_logs&week_start=<?php echo e($prev); ?>">Prev week</a>
-        <label>Week start (Mon)</label>
-        <input name="week_start" type="date" value="<?php echo e($start_date); ?>" class="border rounded px-2 py-1">
-        <button class="px-3 py-1 bg-gray-100 border rounded">Go</button>
-        <a class="px-3 py-1 border rounded" href="index.php?page=work_logs&week_start=<?php echo e($next); ?>">Next week</a>
-      </form>
+      <h2 class="font-semibold"><?php echo $filter_type === 'custom' ? 'Custom Date Range View' : 'Weekly View (Mon–Sat)'; ?></h2>
+      <div class="flex items-center gap-4">
+        <!-- Filter Type Toggle -->
+        <div class="flex items-center gap-2 text-sm">
+          <label class="flex items-center gap-1">
+            <input type="radio" name="filter_type" value="weekly" onchange="this.form.submit()" <?php echo $filter_type === 'weekly' ? 'checked' : ''; ?>>
+            Weekly
+          </label>
+          <label class="flex items-center gap-1">
+            <input type="radio" name="filter_type" value="custom" onchange="this.form.submit()" <?php echo $filter_type === 'custom' ? 'checked' : ''; ?>>
+            Custom Range
+          </label>
+        </div>
+        
+        <?php if ($filter_type === 'weekly'): ?>
+          <!-- Weekly Navigation -->
+          <form method="get" class="flex items-center gap-2 text-sm">
+            <input type="hidden" name="page" value="work_logs">
+            <input type="hidden" name="filter_type" value="weekly">
+            <?php $prev=(new DateTime($start_date))->modify('-7 days')->format('Y-m-d'); $next=(new DateTime($start_date))->modify('+7 days')->format('Y-m-d'); ?>
+            <a class="px-3 py-1 border rounded" href="index.php?page=work_logs&filter_type=weekly&week_start=<?php echo e($prev); ?>">Prev week</a>
+            <label>Week start (Mon)</label>
+            <input name="week_start" type="date" value="<?php echo e($start_date); ?>" class="border rounded px-2 py-1">
+            <button class="px-3 py-1 bg-gray-100 border rounded">Go</button>
+            <a class="px-3 py-1 border rounded" href="index.php?page=work_logs&filter_type=weekly&week_start=<?php echo e($next); ?>">Next week</a>
+          </form>
+        <?php else: ?>
+          <!-- Custom Date Range -->
+          <form method="get" class="flex items-center gap-2 text-sm">
+            <input type="hidden" name="page" value="work_logs">
+            <input type="hidden" name="filter_type" value="custom">
+            <label>From</label>
+            <input name="from_date" type="date" value="<?php echo e($from_date); ?>" class="border rounded px-2 py-1" required>
+            <label>To</label>
+            <input name="to_date" type="date" value="<?php echo e($to_date); ?>" class="border rounded px-2 py-1" required>
+            <button class="px-3 py-1 bg-gray-100 border rounded">Apply</button>
+          </form>
+        <?php endif; ?>
+      </div>
     </div>
     <?php foreach ($dates as $dt): $dtObj=new DateTime($dt); $day=$dtObj->format('D'); $totalWarpsDay=0; foreach ($workers as $w) { $wid=(int)$w['id']; $entry=$logsMap[$dt][$wid] ?? null; $totalWarpsDay += $entry['warps'] ?? 0; } ?>
       <div class="border rounded mb-4">
@@ -179,7 +230,7 @@ foreach ($advAgg as $r) {
   </script>
 
   <div class="bg-white p-4 rounded shadow mt-6">
-    <h2 class="font-semibold mb-3">Weekly Summary (Mon–Sat): <?php echo e($start_date); ?> to <?php echo e($end_date); ?></h2>
+    <h2 class="font-semibold mb-3"><?php echo $filter_type === 'custom' ? 'Custom Range Summary' : 'Weekly Summary (Mon–Sat)'; ?>: <?php echo e($start_date); ?> to <?php echo e($end_date); ?></h2>
     <?php
       // Aggregate weekly totals per worker
       $weeklyTotals = [];
@@ -189,13 +240,17 @@ foreach ($advAgg as $r) {
       foreach ($dates as $dt) {
         if (isset($logsMap[$dt])) {
           foreach ($logsMap[$dt] as $wid=>$entry) {
-            $weeklyTotals[$wid]['warps'] += (int)$entry['warps'];
-            $weeklyTotals[$wid]['amount'] += (float)$entry['amount'];
+            if (isset($weeklyTotals[$wid])) {
+              $weeklyTotals[$wid]['warps'] += (int)$entry['warps'];
+              $weeklyTotals[$wid]['amount'] += (float)$entry['amount'];
+            }
           }
         }
         if (isset($advMap[$dt])) {
           foreach ($advMap[$dt] as $wid=>$adv) {
-            $weeklyTotals[$wid]['bought'] += (float)$adv; // remaining (amount - paid) already
+            if (isset($weeklyTotals[$wid])) {
+              $weeklyTotals[$wid]['bought'] += (float)$adv; // remaining (amount - paid) already
+            }
           }
         }
       }
@@ -284,8 +339,8 @@ foreach ($advAgg as $r) {
           <?php
           $stmt = $pdo->prepare('SELECT a.id, a.advance_date, a.amount, a.paid_amount, a.note, w.name as worker_name
                                  FROM advances a JOIN workers w ON w.id=a.worker_id
-                                 WHERE a.company_id=? AND a.settled=0 ORDER BY a.advance_date DESC, a.id DESC');
-          $stmt->execute([$company['id']]);
+                                 WHERE a.settled=0 ORDER BY a.advance_date DESC, a.id DESC');
+          $stmt->execute();
           foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row): $day=(new DateTime($row['advance_date']))->format('D'); $remaining = max(0, (float)$row['amount'] - (float)$row['paid_amount']); ?>
             <tr class="border-t">
               <td class="py-2"><?php echo e($row['advance_date'] . ' (' . $day . ')'); ?></td>

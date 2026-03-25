@@ -3,19 +3,19 @@ $pdo = DB::conn();
 $company = get_company();
 
 $totals = [
-  'yarn_types' => (int)$pdo->query("SELECT COUNT(*) FROM yarn_types WHERE company_id={$company['id']}")->fetchColumn(),
-  'workers' => (int)$pdo->query("SELECT COUNT(*) FROM workers WHERE company_id={$company['id']}")->fetchColumn(),
-  'stock_kg' => (float)$pdo->query("SELECT IFNULL(SUM(weight_kg),0) FROM stocks WHERE company_id={$company['id']}")->fetchColumn(),
+  'yarn_types' => (int)$pdo->query("SELECT COUNT(*) FROM yarn_types")->fetchColumn(),
+  'workers' => (int)$pdo->query("SELECT COUNT(*) FROM workers")->fetchColumn(),
+  'stock_kg' => (float)$pdo->query("SELECT IFNULL(SUM(bag_weight * total_bags),0) FROM stocks")->fetchColumn(),
   'today_amount' => 0.0,
 ];
 
 // Worker list for panels
-$workersList = $pdo->prepare('SELECT id, name FROM workers WHERE company_id=? ORDER BY name');
-$workersList->execute([$company['id']]);
+$workersList = $pdo->prepare('SELECT id, name FROM workers ORDER BY name');
+$workersList->execute();
 $workersList = $workersList->fetchAll(PDO::FETCH_ASSOC);
 
-$stmt = $pdo->prepare("SELECT IFNULL(SUM(amount),0) FROM work_logs WHERE company_id=? AND work_date=date('now')");
-$stmt->execute([$company['id']]);
+$stmt = $pdo->prepare("SELECT IFNULL(SUM(amount),0) FROM work_logs WHERE work_date=CURDATE()");
+$stmt->execute();
 $totals['today_amount'] = (float)$stmt->fetchColumn();
 ?>
 
@@ -47,9 +47,9 @@ $totals['today_amount'] = (float)$stmt->fetchColumn();
 
       // Work logs aggregated per worker per day in range
       $stmt = $pdo->prepare("SELECT worker_id, work_date, SUM(amount) AS amt
-                             FROM work_logs WHERE company_id=? AND work_date BETWEEN ? AND ?
+                             FROM work_logs WHERE work_date BETWEEN ? AND ?
                              GROUP BY worker_id, work_date");
-      $stmt->execute([$company['id'], $dash_week_start, $dash_week_end]);
+      $stmt->execute([$dash_week_start, $dash_week_end]);
       $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
       $logsDays = []; // worker_id => set of dates worked
       $sumAmt = [];   // worker_id => total amount in week
@@ -64,9 +64,9 @@ $totals['today_amount'] = (float)$stmt->fetchColumn();
 
       // Advances remaining in range per worker
       $stmt = $pdo->prepare("SELECT worker_id, SUM(amount - paid_amount) AS adv
-                             FROM advances WHERE company_id=? AND settled=0 AND advance_date BETWEEN ? AND ?
+                             FROM advances WHERE settled=0 AND advance_date BETWEEN ? AND ?
                              GROUP BY worker_id");
-      $stmt->execute([$company['id'], $dash_week_start, $dash_week_end]);
+      $stmt->execute([$dash_week_start, $dash_week_end]);
       $advRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
       $sumAdv = [];
       foreach ($advRows as $r) { $sumAdv[(int)$r['worker_id']] = (float)$r['adv']; }
@@ -113,16 +113,19 @@ $totals['today_amount'] = (float)$stmt->fetchColumn();
         </thead>
         <tbody>
           <?php
-          $stmt = $pdo->prepare("SELECT y.name, s.weight_kg FROM yarn_types y
-                                  LEFT JOIN stocks s ON s.yarn_type_id=y.id AND s.company_id=y.company_id
-                                  WHERE y.company_id=? ORDER BY y.name");
-          $stmt->execute([$company['id']]);
+          $stmt = $pdo->prepare("SELECT cotton_type as name, SUM(bag_weight * total_bags) as weight_kg FROM stocks GROUP BY cotton_type ORDER BY cotton_type");
+          $stmt->execute();
           foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row): ?>
             <tr class="border-t">
               <td class="py-2"><?php echo e($row['name']); ?></td>
               <td class="py-2"><?php echo number_format((float)$row['weight_kg'], 3); ?></td>
             </tr>
           <?php endforeach; ?>
+          <?php if ($stmt->rowCount() === 0): ?>
+            <tr>
+              <td colspan="2" class="py-4 text-center text-gray-500">No stock records found</td>
+            </tr>
+          <?php endif; ?>
         </tbody>
       </table>
     </div>

@@ -20,6 +20,9 @@ unset($_SESSION['flash_error']);
           <a class="text-gray-700 hover:text-black" href="index.php?page=dashboard">Dashboard</a>
           <a class="text-gray-700 hover:text-black" href="index.php?page=yarn_types">Yarn Types</a>
           <a class="text-gray-700 hover:text-black" href="index.php?page=stocks">Stocks</a>
+          <a class="text-gray-700 hover:text-black" href="index.php?page=purchased_stocks">Purchased Stocks</a>
+          <a class="text-orange-600 hover:text-orange-800 font-bold" href="index.php?page=sales">Sales Stocks</a>
+          <a class="text-indigo-600 hover:text-indigo-800 font-bold" href="index.php?page=summary">Summary</a>
           <a class="text-gray-700 hover:text-black" href="index.php?page=workers">Workers</a>
           <a class="text-gray-700 hover:text-black" href="index.php?page=work_logs">Work Logs</a>
         <?php endif; ?>

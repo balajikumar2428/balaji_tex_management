@@ -1,0 +1,5 @@
+﻿balaji_tex_management.db
+*.db
+.env
+vendor/
+node_modules/

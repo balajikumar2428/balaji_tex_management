@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:80"
+    depends_on:
+      - mysql
+    environment:
+      - DB_HOST=mysql
+      - DB_NAME=balaji_tex
+      - DB_USER=root
+      - DB_PASSWORD=rootpassword
+      - DB_PORT=3306
+    volumes:
+      - .:/var/www/html
+    networks:
+      - balaji-network
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: balaji_tex
+      MYSQL_USER: balaji_user
+      MYSQL_PASSWORD: balaji_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - balaji-network
+
+volumes:
+  mysql_data:
+
+networks:
+  balaji-network:
+    driver: bridge
